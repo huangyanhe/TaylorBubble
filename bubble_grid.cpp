@@ -1,140 +1,143 @@
 #include "bubble_grid.h"
-bubble_grid::bubble_grid(int _m, int _n) :
-  m(_m),
+bubble_grid::bubble_grid(int _m1, int _m2, int _n) :
+  m1(_m1),
+  m2(_m2),
   n(_n),
-  M((m+1)*(n+1)),
+  N1((m1-1)*(n-1)),
+  N2((m2+1)*n-1),
+  N(N1+N2),
   phi1(4.0),
   phi2(20.0),
-  x(0.0, m+1),
-  x1(0.0, m+1),
+  x1(0.0, m1+1),
+  xx1(0.0, m1+1),
+  x2(0.0, m2+1),
+  xx2(0.0, m2+1),
   y(0.0, n+1),  //x for phi, y for psi
-  y1(0.0, n+1), //x, y are for reference. x1 y1 are the real grid 
-  D1_1(m+1, m+1, 0.0),
-  D1_2(m+1, m+1, 0.0),
-  D1_3(m+1, m+1, 0.0),
-  D2_1(n+1, n+1, 0.0),
-  D2_2(n+1, n+1, 0.0),
-  map1(-4.0), // [1,-1] -> [-psi1,psi2]=[0,1/2]
-  map2(-2/(phi1+phi2)), // [1,-1] -> [-phi1, phi2]:y = -(phi1+phi2)/2*(x-1)-phi1
-  f(m+1, n+1, 10),// need to change here?
-  tmp(m+1, n+1, 0.0),
-  tmp1(m, n-1, 0.0),
-  tmp2(m, n-1, 0.0),
-  tmp3(m, n-1, 0.0)
-{
+  yy(0.0, n+1), //x, y are for reference. x1 y1 are the real grid 
+  D1_1(m1+1, m1+1, 0.0),
+  D1_2(m1+1, m1+1, 0.0),
+  D2_1(m2+1, m2+1, 0.0),
+  D2_2(m2+1, m2+1, 0.0),
+  D2_3(m2+1, m2+1, 0.0),
+  D3_1(n+1, n+1, 0.0),
+  D3_2(n+1, n+1, 0.0),
+  map1(-2.0/phi1),
+  map2(-2.0/phi2),
+  map3(-4.0),
+  f(m1+m2+1, n+1, 0.0), 
+  tmp11(m1-1, n-1, 0.0),
+  tmp12(m1-1, n-1, 0.0),
+  tmp13(m1-1, n-1, 0.0),
+  tmp21(m2, n-1, 0.0),
+  tmp22(m2, n-1, 0.0),
+  tmp23(m2, n-1, 0.0)
+{ 
   set_xy();
-  set_A();
-  set_N();
   set_D();
   set_f();
 }
 
-// this is only for getting N, M to build up levmar
-bubble_grid::bubble_grid(int _m, int _n, int flag):
-  m(_m),
-  n(_n),
-  M((m+1)*(n+1)),
-  phi1(4.0),
-  phi2(20.0),
-  x(0.0, m+1),
-  x1(0.0, m+1),
-  y(0.0, n+1),
-  y1(0.0, n+1),
-  map1(-4.0),
-  map2(-2/(phi1+phi2))
-{
-  set_xy();
-  set_A();
-  set_N();
-}
-
 // y = -(phi1+phi2)/2*(x-1)-phi1
 void bubble_grid::set_xy() {
-  for(int i=0; i<=m; i++) {
-    x[i] = cos(pi*i/m);
-    x1[i] = 1/map2*(x[i]-1)-phi1;
+  for(int i=0; i<=m1; i++) {
+    x1[i] = cos(pi*i/m1);
+    xx1[i] = 1/map1*(x1[i]+1);
+  }
+  for(int i=0; i<=m2; i++) {
+    x2[i] = cos(pi*i/m2);
+    xx2[i] = 1/map2*(x2[i]-1);
   }
   for(int i=0; i<=n; i++) {
     y[i] = cos(pi*i/n);
-    y1[i] = 1/map1*(y[i]-1);
+    yy[i] = 1/map3*(y[i]-1);
   }
-}
-
-void bubble_grid::set_A() {
-  int i = 0;
-  while (i<n+1) {
-    if (x1[i] >= 0) break; // need to change here!!!
-    i++;
-  }
-  A = i;
-}
-
-void bubble_grid::set_N() {
-  N = m*(n-1)+m+1-A;
 }
 
 void bubble_grid::set_D() {
-   valarray<Real> c1(1.0, m+1), c2(1.0, n+1);
-    c1[0] = c1[m] = 2.0;
-    c2[0] = c2[n] = 2.0;
-    for(int i=0; i<=m; i++) {
-      for(int j=0; j<=m; j++) {
+  valarray<Real> c1(1.0, m1+1), c2(1.0, m2+1), c3(1.0, n+1);
+    c1[0] = c1[m1] = 2.0;
+    c2[0] = c2[m2] = 2.0;
+    c3[0] = c3[n] = 2.0;
+    // D1_1
+    for(int i=0; i<=m1; i++) {
+      for(int j=0; j<=m1; j++) {
 	if(i == j) {
-	  if(i == 0) D1_1(0,0) = (2*m*m+1)/6.0;
+	  if(i == 0) D1_1(0,0) = (2*m1*m1+1)/6.0;
 	  else {
-	    if (i == m) D1_1(i,i) = -(2*m*m+1)/6.0;
-	    else D1_1(i,j) = -x[i]/2/(1-x[i]*x[i]);
+	    if (i == m1) D1_1(i,i) = -(2*m1*m1+1)/6.0;
+	    else D1_1(i,j) = -x1[i]/2/(1-x1[i]*x1[i]);
 	  }
 	}
-	else D1_1(i,j) = c1[i]*pow(-1, (i+j)%2)/c1[j]/(x[i]-x[j]);
+	else D1_1(i,j) = c1[i]*pow(-1, (i+j)%2)/c1[j]/(x1[i]-x1[j]);
       }
     }
     D1_1 *= map1;
-    
-    for(int i=1; i<m; i++) {
-      for(int j=0; j<=m; j++) {
-        if (i != j) D1_2(i,j) = pow(-1.0, (i+j)%2)*(x[i]*x[i]+x[i]*x[j]-2)/c1[j]/(1-x[i]*x[i])/(x[i]-x[j])/(x[i]-x[j]);
-	else D1_2(i,i) = -((m*m-1)*(1-x[i]*x[i])+3)/3/(1-x[i]*x[i])/(1-x[i]*x[i]);
-      }
-    }
-    for(int j=0; j<m; j++) {
-      D1_2(0,j+1) = 2*pow(-1, (j+1)%2)*((2*m*m+1)*(1-x[j+1])-6)/3/c1[j+1]/(1-x[j+1])/(1-x[j+1]);
-      D1_2(m, j) = 2*pow(-1, (m+j)%2)*((2*m*m+1)*(1+x[j])-6)/3/c1[j]/(1+x[j])/(1+x[j]);
-    }
-    D1_2(0,0) = D1_2(m,m) = (pow(m, 4)-1)/5.0;
-    D1_2 *= map1*map1;
+    D1_2 = D1_1*D1_1;
 
-    //D1_3 to be implemented here
-    
-    for(int i=1; i<n; i++) {
-      for(int j=0; j<=n; j++) {
-        if (i != j) D2_2(i,j) = pow(-1.0, (i+j)%2)*(x[i]*x[i]+x[i]*x[j]-2)/c2[j]/(1-x[i]*x[i])/(x[i]-x[j])/(x[i]-x[j]);
-	else D2_2(i,i) = -((n*n-1)*(1-x[i]*x[i])+3)/3/(1-x[i]*x[i])/(1-x[i]*x[i]);
+    // D2_1
+    for(int i=0; i<=m2; i++) {
+      for(int j=0; j<=m2; j++) {
+	if(i == j) {
+	  if(i == 0) D2_1(0,0) = (2*m2*m2+1)/6.0;
+	  else {
+	    if (i == m2) D2_1(i,i) = -(2*m2*m2+1)/6.0;
+	    else D2_1(i,j) = -x2[i]/2/(1-x2[i]*x2[i]);
+	  }
+	}
+	else D2_1(i,j) = c2[i]*pow(-1, (i+j)%2)/c2[j]/(x2[i]-x2[j]);
       }
     }
-    for(int j=0; j<n; j++) {
-      D2_2(0,j+1) = 2*pow(-1, (j+1)%2)*((2*n*n+1)*(1-x[j+1])-6)/3/c2[j+1]/(1-x[j+1])/(1-x[j+1]);
-      D2_2(n, j) = 2*pow(-1, (n+j)%2)*((2*n*n+1)*(1+x[j])-6)/3/c2[j]/(1+x[j])/(1+x[j]);
+    D2_1 *= map2;
+    D2_2 = D2_1*D2_1;
+    D2_3 = D2_1*D2_2;
+    
+
+    // D3_1^T
+    for(int j=0; j<=n; j++) {
+      for(int i=0; i<=n; i++) {
+	if(j == i) {
+	  if(j == 0) D3_1(0,0) = (2*n*n+1)/6.0;
+	  else {
+	    if (j == n) D3_1(j,j) = -(2*n*n+1)/6.0;
+	    else D3_1(i,j) = -y[j]/2/(1-y[j]*y[j]);
+	  }
+	}
+	else D3_1(i,j) = c3[j]*pow(-1, (i+j)%2)/c3[i]/(y[j]-y[i]);
+      }
     }
-    D2_2(0,0) = D1_2(n,n) = (pow(n, 4)-1)/5.0;
-    D2_2 *= map2*map2;
+    D3_1 *= map3;
+    D3_2 = D3_1*D3_1;
 }
 
 
 
-// need to initialize all of them and then use mat_vec to initialize f.
+// need to initialize all of them and then use mat_vec to initialize x.
 void bubble_grid::set_f() {
-  for (int i=0; i<=m; i++) {
-    f(i, n) = 1;
-    if (i < A) f(i, 0) = 0;
+  for (int i=0; i<=m1; i++) {
+    f(i, n) = 1.0;
+    f(i, 0) = 0.0;
   }
-  for (int j=0; j<=n; j++) {
-    f(0,j) = 2*y[j];
+  
+  Real temp;
+  for (int j=1; j<n; j++) {
+    temp = 2*yy[j];
+    for(int i=0; i<m1; i++)
+      f(i, j) = temp;
   }
+  for(int i=1; i<=m2; i++)
+    f(i+m1, n) = 1.0;
+  
+  for(int j=0; j<n; j++)
+    for(int i=0; i<=m2; i++)
+      //f(i+m1, j) = sqrt(xx2[i]/20)*(1-2*yy[j])+2*yy[j];
+      //f(i+m1, j) = sqrt(xx2[i]/22.0)*(1-2*yy[j])+2*yy[j];
+      f(i+m1, j) = 2.0/pi*atan(1.6*pow(xx2[i], 2.0/3))*(1-2*yy[j])+2*yy[j];
 }
 
 
+/*
 int bubble_grid::delta(int _i, int _j) {
   if(_i == _j) return 1;
   return 0;
 }
+*/
