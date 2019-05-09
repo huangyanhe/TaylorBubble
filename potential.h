@@ -3,45 +3,54 @@
 
 #include "levmar2.h"
 //#include "poly_grid.h"
+#include "real_def.h"
 #include "fftjw2.h"
 #include "lapack.h"
+#include "str_double.h"
 
 class potential : public levmar<Real, double> {
  public:
   int N, M; // number of grid points in S1, S2
-  int n; // number of quadrature points
+  int n1; // number of quadrature points
   valarray<Real> theta1, theta2; // stores theta_n, theta_m
   valarray<Real> r0, r1, r2; // initial bubble shape guess r0, first and second derivatives r1, r2
-  valarray<cx> c0;
-  mp_mat<cx> c1, c2;
+  valarray<cmplx<Real> > c0;
+  mp_mat<cmplx<Real> > c1, c2;
   Real V0; // bubble volume
-  const Real alpha = 50; // surface tension
-  Real F=0.49; //Froude number
+  const Real alpha; // surface tension
+  const Real F; //Froude number
   fft_class<Real> fft1, fft2; // fft on S1, S2
   valarray<Real> mu1, mu2;
   Real a, b, c, d, e, f, g, h, G; // stores G[a,b,c,d]
-  valarray x1, x2, w1, w2, xx, ww; //classic&generalized guassian quadrature
-  Real m;
+  valarray<Real> x1, x2, w1, w2, xx, ww; //classic&generalized guassian quadrature
   Real X; // for computing B, D when m>0.9
-  valarray<int> m0, index_B, index_D;
+  valarray<Real> m0;
+  valarray<int> index_B, index_D;
   mp_mat<Real> B, D; // stores coeffs of B(m), D(m) Taylor expansion
   mp_mat<Real> A; // stores the lhs matrix when computing mu
   valarray<Real> rhs; // stores the rhs when computing mu
+  valarray<Real> _r; // stores temporary residue.
+  static const Real pi;
+  
   potential(int N_, int M_);
 
   void set_theta();
   void set_c12();
-  void set_r0();
-  
+  void set_x0();
   void compute_r12();
   void compute_V0();
   void compute_xw();
   void set_BD();
+  void initial();
+  
   Real compute_B(Real _m);
   Real compute_D(Real _m);
   void compute_G(Real _a, Real _b, Real _c, Real _d);
   void compute_mu();
   void update_shape();
+  void update_r(valarray<Real> rr);
+  valarray<Real> compute_rr();
+  
   virtual void compute_r();
   virtual void compute_J();
 
