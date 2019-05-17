@@ -17,12 +17,14 @@ class potential : public levmar<Real, double> {
   valarray<cmplx<Real> > c0;
   mp_mat<cmplx<Real> > c1, c2;
   Real V0; // bubble volume
+  const Real U; //rising velocity
   const Real alpha; // surface tension
   const Real F; //Froude number
   fft_class<Real> fft1, fft2; // fft on S1, S2
   valarray<Real> mu1, mu2;
   Real a, b, c, d, e, f, g, h, G; // stores G[a,b,c,d]
   valarray<Real> x1, x2, w1, w2, xx, ww; //classic&generalized guassian quadrature
+  mp_mat<Real> xx1_1, xx1_2, xx1_3, ww1_1, ww1_2, ww1_3, xx2_1, xx2_2, xx2_3, ww2_1, ww2_2, ww2_3; // stores all the quadrature nodes&weights
   Real X; // for computing B, D when m>0.9
   valarray<Real> m0;
   valarray<int> index_B, index_D;
@@ -43,8 +45,8 @@ class potential : public levmar<Real, double> {
   void set_BD();
   void initial();
   
-  Real compute_B(Real _m);
-  Real compute_D(Real _m);
+  Real compute_B(Real _m, Real _multi=0.0);
+  Real compute_D(Real _m, Real _multi=0.0);
   void compute_G(Real _a, Real _b, Real _c, Real _d);
   void compute_mu();
   void update_shape();
@@ -53,6 +55,7 @@ class potential : public levmar<Real, double> {
   
   virtual void compute_r();
   virtual void compute_J();
+  void interpolate(int l);
 
 };
 
