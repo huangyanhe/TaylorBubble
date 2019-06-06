@@ -1,0 +1,35 @@
+#!/bin/bash                                                                                             
+#SBATCH --job-name=omp03c                                                                               
+#SBATCH --account=fc_wwaves                                                                             
+#SBATCH --partition=savio2                                                                              
+#SBATCH --qos=savio_normal                                                                              
+#SBATCH --nodes=1                                                                                       
+#SBATCH --ntasks-per-node=24                                                                            
+#SBATCH --cpus-per-task=1                                                                               
+#SBATCH --time=2:00:00                                                                                  
+#SBATCH --error=err103                                                                                  
+#SBATCH --output=out103                                                                                
+
+idx=103
+
+export OMP_NUM_THREADS=24
+export MKL_NUM_THREADS=24
+# export MKL_DISABLE_FAST_MM=1                                                                          
+
+module load intel
+module load mkl
+module load fftw
+module list
+
+NDFILE=node_file_$idx
+for i in `echo $SLURM_JOB_NODELIST | sed s/,/" "/g`; do echo $i; done > $NDFILE
+cat $NDFILE
+
+echo
+# echo "args = $args";                                                                                  
+echo "SLURM_NTASKS = $SLURM_NTASKS";
+echo "SLURM_NTASKS_PER_NODE = $SLURM_NTASKS_PER_NODE";
+echo "OMP_NUM_THREADS = $OMP_NUM_THREADS";
+echo "MKL_NUM_THREADS = $MKL_NUM_THREADS";
+
+/global/home/users/yanhe_huang/daniel/run/test_bubble
