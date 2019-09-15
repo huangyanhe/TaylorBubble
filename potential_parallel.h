@@ -6,7 +6,7 @@
 #include "fftjw2.h"
 #include "lapack.h"
 #include "str_double.h"
-
+#include <omp.h>
 class potential : public levmar<Real, double> {
  public:
   int N, M; // number of grid points in S1, S2
@@ -16,9 +16,9 @@ class potential : public levmar<Real, double> {
   //  valarray<cmplx<Real> > c0;
   mp_mat<cmplx<Real> > c1, c2;
   Real V0; // bubble volume
-  const Real U; //rising velocity
+  //  const Real U; //rising velocity
   const Real alpha; // surface tension
-  const Real F; //Froude number
+  //const Real F; //Froude number
   fft_class<Real> fft1, fft2; // fft on S1, S2
   valarray<Real> mu1, mu2;
   // Real a, b, c, d, e, f, g, h, G; // stores G[a,b,c,d]
@@ -47,11 +47,11 @@ class potential : public levmar<Real, double> {
   Real compute_B(Real _m, Real _multi=0.0);
   Real compute_D(Real _m, Real _multi=0.0);
   Real compute_G(Real _a, Real _b, Real _c, Real _d);
-  void compute_mu(valarray<Real> &r0, valarray<Real> &mu1, valarray<Real> &mu2);
+  void compute_mu(valarray<Real> &r0, valarray<Real> &mu1, valarray<Real> &mu2, Real _U);
   //void update_shape();
   //void update_r(vector<Real> &_r, valarray<Real> _rr);
-  valarray<Real> compute_rr(valarray<Real> &_r0);
-  
+  valarray<Real> compute_rr(valarray<Real> &_r0, Real U);
+  //valarray<Real> compute_rr(valarray<Real> &_r0);
   virtual void compute_r();
   virtual void compute_J();
   void interpolate(int l);
@@ -59,4 +59,3 @@ class potential : public levmar<Real, double> {
 };
 
 #endif
-  

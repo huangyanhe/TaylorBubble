@@ -1,6 +1,7 @@
-#include "potential_parallel.h"
+#include "potential.h"
 const Real potential::pi = 3.141592653589793238463;
 potential::potential(int _N, int _M) :
+  //  levmar(_N, _N),
   levmar(_N+1, _N+1),
   N(_N),
   M(_M),
@@ -10,13 +11,14 @@ potential::potential(int _N, int _M) :
   //r0(N+1),
   //r1(N+1),
   //r2(N+1),
-  //c0(2*N),
+  //c0(N+1),
   c1(2*N,N+1),
   c2(2*M,M),
-  V0(0.0),
-  U(1.0),
-  alpha(20),
-  F(U/sqrt(9.8)),
+  V0(0.972*pi),
+  alpha(6.0),
+  // F(U), F=U(g=1) is our variable now.
+  //  F(0.6),
+  //U(-0.6),
   fft1(2*N),
   fft2(2*M),
   //  mu1(N+1),
@@ -69,7 +71,7 @@ void potential::set_theta() {
 void potential::set_c12() {
   // trignometric coeff of mu1
   mp_mat<Real> temp0(2*N, N+1, 0.0);
-#pragma omp parallel for schedule(dynamic)
+#pragma omp parallel for schedule(static)
   for(int i=0; i<=N; i++) {
     temp0(i,i) = 1.0;
     if (2*N-i < 2*N)
@@ -78,7 +80,7 @@ void potential::set_c12() {
   fft1.forward(temp0.p, c1.p, N+1, 2*N, 2*N);
   // trignometric coeff of mu2
   temp0.resize(2*M, M, 0.0);
-#pragma omp parallel for schedule(dynamic)
+#pragma omp parallel for schedule(static)
   for(int i=0; i<M; i++) 
     temp0(i,i) = temp0(2*M-i-1,i) = 1.0;
   fft2.forward(temp0.p, c2.p, M, 2*M, 2*M);
@@ -86,26 +88,52 @@ void potential::set_c12() {
 
 
 void potential::set_x0() {
-  //  string line1;
-  //ifstream in("initial");
-  //for(int i=0; i<=N; i++) {
-  // getline(in, line1);
-  //istringstream yan(line1);
-  //yan >> r0[i];
-  //x[i] = r0[i];
-  // rescale x, y, z of a ball by 3, 5/6, 5/6.
-  
+  /*    
   int N1 = N/2;
-  x[0] = 3.0;
-#pragma omp parallel for schedule(dynamic)
-  for(int i=1; i<=N1; i++) {
+  Real tmp;
+  x[0] = -1.0;
+  for(int i=1; i<=N1; i++)
+    x[i] = 0.9;
+  for(int i=N1+1; i<=N; i++) {
+    tmp = atan(-20.0/3*tan(theta1[i]));
+    x[i] = 36*pow(cos(tmp),2)+0.81*pow(sin(tmp),2);
+    x[i] = sqrt(x[i]);
+  }
+  */
+  /*
+  int N1 = N/2;
+  for(int i=0; i<=15; i++) 
+    x[i] = 9.0/5*cos(i*pi/60);
+  for(int i=16; i<=N1; i++)
+    x[i] = 0.9;
+  for(int i=N1+1; i<=N; i++)
+    x[i] = x[N-i];
+  */
+
+ 
+  string line1;
+  ifstream in("initial");
+  for(int i=0; i<=N; i++) {
+    getline(in, line1);
+    istringstream yan(line1);
+    yan >> x[i];
+  }
+    
+    
+  // rescale x, y, z of a ball by 3, 5/6, 5/6.
+  /*    
+  int N1 = N/2;
+#pragma omp parallel for schedule(static)
+  for(int i=0; i<=N1; i++) {
     Real tmp = atan(18.0/5*tan(theta1[i]));
     x[i] = 9*pow(cos(tmp),2)+25.0/36*pow(sin(tmp),2);
     x[i] = sqrt(x[i]);
-  }
-#pragma omp parallel for schedule(dynamic)
+  }  
+#pragma omp parallel for schedule(static)
   for(int i=N1+1; i<=N; i++)
     x[i] = x[N-i];
+  x[0] = -0.6;
+  */
 }
 
 void potential::compute_c0r12(valarray<Real> &_r0,valarray<cmplx<Real> > &_c0, valarray<Real> &_r1, valarray<Real> &_r2) {
@@ -117,7 +145,24 @@ void potential::compute_c0r12(valarray<Real> &_r0,valarray<cmplx<Real> > &_c0, v
   for(int i=N+1; i<2*N; i++) 
     temp0[i] = _r0[2*N-i];
   fft1.forward(&temp0[0], &_c0[0]); // store the fft coeff of R.
- 
+  /*
+  FILE *fp1 = fopen("new", "w");
+  valarray<cmplx<Real> > cc(N+1);
+  valarray<Real> xxx(N+1, 0.0);
+  for(int i=0; i<=N; i++) {
+    cc[i] = _c0[i]*exp(-2*theta1[i]);
+  }
+  for(int i=0; i<=N; i++)
+    xxx[i] = fft1.eval(&cc[0], theta1[i]);
+  for(int i=0; i<=N; i++)
+    fprintf(fp1, "%23s\n", str(xxx[i], 0));
+  */
+  /*
+  FILE *fp1 = fopen("coeff", "w");
+  for(int i=0; i<=N; i++) { // can change                                                                                                                   
+    fprintf(fp1, "%23s\n",str(_c0[i].real(), 0));
+  }
+  */
   fft1.deriv(&temp0[0], &temp1[0]);
 
   //#pragma omp parallel for
@@ -187,61 +232,63 @@ void potential::compute_xw() {
     w2[7] = 0.177965753961471;
     w2[8] = 0.133724770615462;
     w2[9] = 0.628655101770325e-1;
-#pragma omp parallel for collapse(2) schedule(dynamic)
-    for(int j=0; j<N; j++) 
+#pragma omp parallel
+    {
+#pragma omp for collapse(2) schedule(static) nowait
+      for(int j=0; j<N; j++) 
+	for(int i=0; i<n1; i++) {
+	  xx1_1(i, j) = pi/N*x1[i]+theta1[j];
+	  ww1_1(i, j) = pi/N*w1[i];
+	}
+#pragma omp for collapse(2) schedule(static) nowait
+      for(int j=1; j<N; j++) 
+ 	for(int i=0; i<n1; i++) {
+	  xx1_2(i, j-1) = -pi/N*x2[i]+theta1[j];
+	  ww1_2(i, j-1) = pi/N*w2[i];
+	}
+#pragma omp for collapse(2) schedule(static) nowait
+      for(int j=1; j<N; j++) 
+	for(int i=0; i<n1; i++) {
+	  xx1_3(i, j-1) = pi/N*x2[i]+theta1[j];
+	  ww1_3(i, j-1) = pi/N*w2[i];
+	}
+#pragma omp for schedule(static) nowait
       for(int i=0; i<n1; i++) {
-	xx1_1(i, j) = pi/N*x1[i]+theta1[j];
-	ww1_1(i, j) = pi/N*w1[i];
+	xx2_1(i, 0) = pi/2/M*x1[i];
+	ww2_1(i, 0) = pi/2/M*w1[i];
+	xx2_1(i, M) = -pi/2/M*x1[i]+pi;
+	ww2_1(i, M) = pi/2/M*w1[i];
       }
-#pragma omp parallel for collapse(2) schedule(dynamic)
-    for(int j=1; j<N; j++) 
+#pragma omp for collapse(2) schedule(static) nowait
+      for(int j=0; j<M-1; j++) 
+	for(int i=0; i<n1; i++) {
+	  xx2_1(i, j+1) = pi/M*x1[i]+theta2[j];
+	  ww2_1(i, j+1) = pi/M*w1[i];
+	}
+#pragma omp for schedule(static) nowait
       for(int i=0; i<n1; i++) {
-	xx1_2(i, j-1) = -pi/N*x2[i]+theta1[j];
-	ww1_2(i, j-1) = pi/N*w2[i];
+	xx2_2(i, 0) = -pi/M/2*x2[i]+theta2[0];
+	ww2_2(i, 0) = pi/M/2*w2[i];
       }
-#pragma omp parallel for collapse(2) schedule(dynamic)
-    for(int j=1; j<N; j++) 
+#pragma omp for collapse(2) schedule(static) nowait
+      for(int j=1; j<M; j++) 
+	for(int i=0; i<n1; i++) {
+	  xx2_2(i, j) = -pi/M*x2[i]+theta2[j];
+	  ww2_2(i, j) = pi/M*w2[i];
+	}
+#pragma omp for schedule(static) nowait
       for(int i=0; i<n1; i++) {
-	xx1_3(i, j-1) = pi/N*x2[i]+theta1[j];
-	ww1_3(i, j-1) = pi/N*w2[i];
+	xx2_3(i,M-1) = pi/2/M*x2[i]+theta2[M-1];
+	ww2_3(i,M-1) = pi/2/M*w2[i];
       }
-
-
-#pragma omp parallel for schedule(dynamic)
-    for(int i=0; i<n1; i++) {
-      xx2_1(i, 0) = pi/2/M*x1[i];
-      ww2_1(i, 0) = pi/2/M*w1[i];
-      xx2_1(i, M) = -pi/2/M*x1[i]+pi;
-      ww2_1(i, M) = pi/2/M*w1[i];
+#pragma omp for collapse(2) schedule(static) nowait
+      for(int j=0; j<M-1; j++) 
+	for(int i=0; i<n1; i++) {
+	  xx2_3(i, j) = pi/M*x2[i]+theta2[j];
+	  ww2_3(i, j) = pi/M*w2[i];
+	}
+#pragma omp barrier
     }
-#pragma omp parallel for collapse(2) schedule(dynamic)
-    for(int j=0; j<M-1; j++) 
-      for(int i=0; i<n1; i++) {
-	xx2_1(i, j+1) = pi/M*x1[i]+theta2[j];
-	ww2_1(i, j+1) = pi/M*w1[i];
-      }
-#pragma omp parallel for schedule(dynamic)
-    for(int i=0; i<n1; i++) {
-      xx2_2(i, 0) = -pi/M/2*x2[i]+theta2[0];
-      ww2_2(i, 0) = pi/M/2*w2[i];
-    }
-#pragma omp parallel for collapse(2) schedule(dynamic)
-    for(int j=1; j<M; j++) 
-      for(int i=0; i<n1; i++) {
-	xx2_2(i, j) = -pi/M*x2[i]+theta2[j];
-	ww2_2(i, j) = pi/M*w2[i];
-      }
-#pragma omp parallel for schedule(dynamic)
-    for(int i=0; i<n1; i++) {
-      xx2_3(i,M-1) = pi/2/M*x2[i]+theta2[M-1];
-      ww2_3(i,M-1) = pi/2/M*w2[i];
-    }
-#pragma omp parallel for collapse(2) schedule(dynamic)
-    for(int j=0; j<M-1; j++) 
-      for(int i=0; i<n1; i++) {
-	xx2_3(i, j) = pi/M*x2[i]+theta2[j];
-	ww2_3(i, j) = pi/M*w2[i];
-      }
   }
     // if need higher degree add n==15, 20 case
   
@@ -664,7 +711,7 @@ void potential::initial() {
   set_c12();
   set_x0();
   //compute_c0r12(r0, r1, r2);
-  compute_V0();
+  //compute_V0();
   compute_xw();
   set_BD();
 }
@@ -802,12 +849,12 @@ Real potential::compute_G(Real _a, Real _b, Real _c, Real _d) {
   return G; 
 }
 
-
-valarray<Real> potential::compute_rr(valarray<Real> &r0) {
+valarray<Real> potential::compute_rr(valarray<Real> &r0, Real U) {
+//valarray<Real> potential::compute_rr(valarray<Real> &r0) {
   // compute phi1_theta and phi2_theta
-  valarray<cmplx<Real> > c0(2*N);
+  valarray<cmplx<Real> > c0(N+1);
   valarray<Real> r1(N+1), r2(N+1);
-  compute_c0r12(r0,c0,r1, r2);
+  compute_c0r12(r0,c0,r1,r2);
   
   valarray<Real> mu1(N+1), mu2(M);
 
@@ -819,26 +866,27 @@ valarray<Real> potential::compute_rr(valarray<Real> &r0) {
   Real a, b, c, d, e, f, g, h, G;
   valarray<Real> xx(0.0, n1), ww(0.0, n1);
   valarray<Real> _r(0.0, N+1);
-
-
-  rhs[0] = -U*r0[0];
-  rhs[N] = U*r0[N];
+  //valarray<Real> _r(0.0, N); //without volumn
+  Real F = -U/0.00025;
+  
+  rhs[0] = U*r0[0];
+  rhs[N] = -U*r0[N];
   A(0,0) = 0.5*r0[0];
   A(N,N) = 0.5*r0[N];
-  A(0,0) -= pi*(r0[0]-r2[0])*pi/(2*N);
-  A(N,N) -= pi*(r0[N]-r2[N])*pi/(2*N);
+  A(0,0) += pi*(r0[0]-r2[0])*pi/(2*N);
+  A(N,N) += pi*(r0[N]-r2[N])*pi/(2*N);
 
-  for(int j=1; j<=N; j++) {
+  for(int j=1; j<N; j++) {
     a = -r0[0]*cos(theta1[j])*r0[j]+ pow(r0[0], 2);
     c = r0[j]*r0[j] + pow(r0[0],2) -2*r0[j]*r0[0]*cos(theta1[j]);
     G = compute_G(a, 0, c, 0);
-    A(0, j) -= pi/N*pow(r0[j],2)*sin(theta1[j])*G;
+    A(0, j) += pi/N*pow(r0[j],2)*sin(theta1[j])*G;
   }
-  for(int j=0; j<N; j++) {
+  for(int j=1; j<N; j++) {
     a = r0[N]*cos(theta1[j])*r0[j] + r0[N]*r0[N];
     c = r0[j]*r0[j]+r0[N]*r0[N]+2*r0[N]*r0[j]*cos(theta1[j]);
     G = compute_G(a,0,c,0);
-    A(N, j) -= pi/N*r0[j]*r0[j]*sin(theta1[j])*G;
+    A(N, j) += pi/N*r0[j]*r0[j]*sin(theta1[j])*G;
   }
   
   for(int q=0; q<M; q++) {
@@ -846,22 +894,23 @@ valarray<Real> potential::compute_rr(valarray<Real> &r0) {
     e = r0[0]*(r0[0]-y);
     g = y*y+r0[0]*r0[0]-2*y*r0[0]+1;
     G = compute_G(e,0,g,0);
-    A(0, q+N+1) -= (1+y*y)*G*pi/M;
+    A(0, q+N+1) += (1+y*y)*G*pi/M;
 
     e = r0[N]*(r0[N]+y);
     g = y*y+r0[N]*r0[N]+2*y*r0[N]+1;
     G = compute_G(e,0,g,0);
-    A(N, q+N+1) -= (1+y*y)*G*pi/M;
+    A(N, q+N+1) += (1+y*y)*G*pi/M;
   }
   
   for(int k=1; k<N; k++) {
     temp = sqrt(r0[k]*r0[k]+r1[k]*r1[k]);
-    rhs[k] = -(r1[k]*sin(theta1[k])+r0[k]*cos(theta1[k]))*U;
+    Real common1 = r1[k]*sin(theta1[k])+r0[k]*cos(theta1[k]);
+    Real common2 = r0[k]*sin(theta1[k])-r1[k]*cos(theta1[k]);
+    rhs[k] = common1*U;
     A(k,k) = 0.5*temp;
     for(int l=1; l<=N; l++) {
-      
       if(k==l) {
-	xx = xx1_2.extract_column(k-1);
+	xx = ww1_2.extract_column(k-1);
 	ww = ww1_2.extract_column(k-1);
       }
       else if(l== k+1) {
@@ -874,26 +923,26 @@ valarray<Real> potential::compute_rr(valarray<Real> &r0) {
       }
       for(int q=0; q<n1; q++) {
 	val = fft1.eval(&c0[0], xx[q]);
-	a = (r1[k]*sin(xx[q]-theta1[k]) - r0[k]*cos(xx[q]-theta1[k]))*val +r1[k]*r0[k]*sin(theta1[k])*cos(theta1[k]) + pow(r0[k]*cos(theta1[k]), 2);
-	b = (r1[k]*cos(theta1[k])-r0[k]*sin(theta1[k]))*r0[k]*sin(theta1[k]);
+	a = -val*cos(xx[q])*common1 + r0[k]*r0[k];
+	b = val*sin(xx[q])*common2;
 	c = val*val + pow(r0[k],2) -2*val*r0[k]*cos(xx[q])*cos(theta1[k]);
 	d = 2*val*r0[k]*sin(xx[q])*sin(theta1[k]);
 	G = compute_G(a, b, c, d);
 	for(int j=0; j<N+1; j++)
-	  A(k, j) -= val*val*fft1.eval(&c1.p[2*N*j], xx[q])*sin(xx[q])*G*ww[q];
+	  A(k, j) += val*val*fft1.eval(&c1.p[2*N*j], xx[q])*sin(xx[q])*G*ww[q];
       }
     }
     // for this second integral, use midpoint rule due to the smooth integrand
      for(int j=0; j<M; j++) {
       y = -tan(theta2[j]-pi/2);
-      e = (r1[k]*sin(theta1[k])+r0[k]*cos(theta1[k]))*(r0[k]*cos(theta1[k])-y) +r1[k]*cos(theta1[k])-r0[k]*sin(theta1[k]);
-      f = (r1[k]*cos(theta1[k])-r0[k]*sin(theta1[k]))*r0[k]*sin(theta1[k]);
+      e = -common1*y+r0[k]*r0[k];
+      f = common2;
       g = y*y+pow(r0[k],2)-2*y*r0[k]*cos(theta1[k])+1;
       h = 2*r0[k]*sin(theta1[k]);
       G = compute_G(e, f, g, h);
 
       val = (1+y*y)*G*pi/M;
-      A(k, j+N+1) -= val; 
+      A(k, j+N+1) += val; 
     }
   }
   
@@ -911,10 +960,9 @@ valarray<Real> potential::compute_rr(valarray<Real> &r0) {
       c = pow(x_k,2)+r0[j]*r0[j]-2*x_k*r0[j]*cos(theta1[j])+1;
       d = 2*r0[j]*sin(theta1[j]);
       G = compute_G(a, b, c, d);
-      A(N+1+k, j) -= val*G*pi/N;
+      A(N+1+k, j) += val*G*pi/N;
     }
-    for(int l=0; l<=M; l++) {
-      
+    for(int l=0; l<=M; l++) {      
       if (l==k) {
 	xx = xx2_2.extract_column(k);
 	ww = ww2_2.extract_column(k);
@@ -937,7 +985,7 @@ valarray<Real> potential::compute_rr(valarray<Real> &r0) {
 	for(int j=0; j<M; j++) {
 	  val = fft2.eval(&c2.p[2*M*j], xx[q]-pi/(2*M));
 	  val *= G*ww[q]*(1+y*y);
-	  A(N+1+k, N+1+j) -= val;
+	  A(N+1+k, N+1+j) += val;
 	}
       }
     }
@@ -947,7 +995,7 @@ valarray<Real> potential::compute_rr(valarray<Real> &r0) {
   // solve A\mu = rhs
   int info = 0;
   valarray<int> ipv(N+1+M);
-  dgetrf(N+1+M,N+1+M, A.p,N+1+M,&ipv[0],&info);
+  dgetrf(N+1+M,N+1+M,A.p,N+1+M,&ipv[0],&info);
   dgetrs('N',N+1+M,1,A.p,N+1+M,&ipv[0],&rhs[0],N+1+M,&info);
   //for(int i=0; i<N+1+M; i++)
   //printf("%23s\n", str(rhs[i],0) );
@@ -961,9 +1009,10 @@ valarray<Real> potential::compute_rr(valarray<Real> &r0) {
   for(int k=1; k<N; k++) {
     phi1 = 0.0;
     phi2 = 0.0;
+    
     for(int l=1; l<=N; l++) {
       /*
-	if (k==l) {
+      if (k==l) {
 	  xx = -(pi/N)*x2+theta1[k];
 	  ww = (pi/N)*w2;
 	}
@@ -975,7 +1024,7 @@ valarray<Real> potential::compute_rr(valarray<Real> &r0) {
 	  xx = pi/N*x1+theta1[l-1];
 	  ww = pi/N*w1;
 	}
-	*/
+      */
       
       if(k==l) {
 	xx = xx1_2.extract_column(k-1);
@@ -1019,26 +1068,28 @@ valarray<Real> potential::compute_rr(valarray<Real> &r0) {
       
       phi2 -= mu2[j]*(1+y*y)*G*pi/M;
     }
-      
+  
     temp = r0[k]*r0[k]+r1[k]*r1[k];
-    _r[k-1] = pow(phi1+phi2-U*r1[k]*cos(theta1[k])+U*r0[k]*sin(theta1[k]),2)/temp;
-    //_r[k-1] += 2.0/F/F*r0[k]*cos(theta1[k]);
-    _r[k-1] += 2.0/alpha*((r0[k]*r0[k]+2*r1[k]*r1[k]-r0[k]*r2[k])/pow(temp,1.5) + (1-r1[k]/r0[k]/tan(theta1[k]))/sqrt(temp));
-    //_r[k-1] -= 2.0/F/F*r0[0]+4.0/alpha*(r0[0]-r2[0])/pow(r0[0],2);
-    _r[k-1] -= 4.0/alpha*(r0[0]-r2[0])/pow(r0[0],2);
+     _r[k-1] = pow(phi1+phi2+U*r1[k]*cos(theta1[k])-U*r0[k]*sin(theta1[k]),2)/temp;
+     _r[k-1] += 2.0/F/F*r0[k]*cos(theta1[k]);
+     _r[k-1] += 2.0/alpha*((r0[k]*r0[k]+2*r1[k]*r1[k]-r0[k]*r2[k])/pow(temp,1.5) + (1-r1[k]/r0[k]/tan(theta1[k]))/sqrt(temp));
+     _r[k-1] -= 2.0/F/F*r0[0]+4.0/alpha*(r0[0]-r2[0])/pow(r0[0],2);
+     //_r[k-1] -= 4.0/alpha*(r0[0]-r2[0])/pow(r0[0],2);
   }
   
-  _r[N-1] = 4.0/alpha*((r0[N]-r2[N])/pow(r0[N],2)-(r0[0]-r2[0])/pow(r0[0],2));
-  //_r[N-1] = -2.0/F/F*(r0[N]+r0[0])+4.0/alpha*((r0[N]-r2[N])/pow(r0[N],2)-(r0[0]-r2[0])/pow(r0[0],2));
+  //_r[N-1] = 4.0/alpha*((r0[N]-r2[N])/pow(r0[N],2)-(r0[0]-r2[0])/pow(r0[0],2));
+  _r[N-1] = -2.0/F/F*(r0[N]+r0[0])+4.0/alpha*((r0[N]-r2[N])/pow(r0[N],2)-(r0[0]-r2[0])/pow(r0[0],2));
   
   
   temp = 0.0;
+  
   //#pragma omp parallel for reduction (+:temp)
   for(int i=1; i<N; i++)
     temp += pow(r0[i],3) * sin(theta1[i]);
-  
-  _r[N] = temp*2*pi/3*pi/N - V0;
 
+   //bubble volume fixed.
+   _r[N] = temp*2*pi/3*pi/N - V0;
+  
   /*
   for(int i=0; i<=N; i++)
     printf(" %23s\n", str(mu1[i],0));
@@ -1050,13 +1101,25 @@ valarray<Real> potential::compute_rr(valarray<Real> &r0) {
 
 void potential::compute_r() {
   //update_shape();
+  
   valarray<Real> r0(N+1);
-  for(int i=0; i<=N; i++)
+  for(int i=1; i<=N; i++)
     r0[i] = x[i];
+  r0[0] = 0.9;
   valarray<Real> temp_r(N+1);
-  temp_r = compute_rr(r0);
+  temp_r = compute_rr(r0, x[0]);
   for(int i=0; i<=N; i++)
+    r[i] = temp_r[i];  
+  /*
+  valarray<Real> r0(N+1);
+  for(int i=1; i<=N; i++)                                                                                                            
+    r0[i] = x[i-1];                                                                                                                  
+  r0[0] = 3.0; 
+  valarray<Real> temp_r(N);
+  temp_r = compute_rr(r0);
+  for(int i=0; i<N; i++)
     r[i] = temp_r[i];
+  */
 }
 /*
 void potential::update_r(vector<Real> &_r, valarray<Real> _rr) {
@@ -1068,30 +1131,43 @@ void potential::update_r(vector<Real> &_r, valarray<Real> _rr) {
 void potential::compute_J() {
   //update_shape();
   //valarray<Real> g1(N+1), g2(N+1);
-  const Real eps = 1.0e-7;//6.0e-6;
-
-#pragma omp parallel for
-  for(int i=0; i<=N; i++) {
+  const Real eps = 1.0e-8;//6.0e-6;
+  
+#pragma omp parallel for schedule(static)
+  //for(int i=0; i<N; i++) {
+  for(int i=1; i<=N; i++) {
     valarray<Real> g1(N+1), temp_r0(N+1);
-    for(int k=0; k<=N; k++)
+    temp_r0[0] = 0.9;
+    for(int k=1; k<=N; k++)
       temp_r0[k] = x[k];
     
     temp_r0[i] += eps;
-    g1 = compute_rr(temp_r0);
+    g1 = compute_rr(temp_r0, x[0]);
     //for(int l=0; l<=N; l++)
     //printf("%d, %23s\nn", l, str(g[l],0));
-
-    temp_r0[i] = x[i] - eps;
-    g1 -= compute_rr(temp_r0);
+    
+    temp_r0[i] = temp_r0[i] - 2*eps;
+    g1 -= compute_rr(temp_r0, x[0]);
     for(int k=0; k<=N; k++) 
       J(k,i) = g1[k]/(2*eps);
   }
-  J.dump("JJ_parallel", 17, '%');
+  
+  
+  valarray<Real> g1(N+1), temp_r0(N+1);
+  for(int k=1; k<=N; k++)
+      temp_r0[k] = x[k];
+  temp_r0[0] = 0.9;
+  g1 = compute_rr(temp_r0, x[0]+eps);
+  g1 -= compute_rr(temp_r0, x[0]-eps);
+  for(int k=0; k<=N; k++) {
+    J(k,0) = g1[k]/(2*eps);
+  }
+  //J.dump("JJ_parallel", 17, '%');
 }
 	  
 
 void potential::interpolate(int l) {
-  valarray<cmplx<Real> > c0(2*N);
+  valarray<cmplx<Real> > c0(N+1);
   valarray<Real> r1(N+1), r2(0.0,N+1);
   valarray<Real> r0(N+1);
   for(int i=0; i<=N; i++)
